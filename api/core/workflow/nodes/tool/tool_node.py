@@ -105,6 +105,17 @@ class ToolNode(Node[ToolNodeData]):
         # get conversation id
         conversation_id = self.graph_runtime_state.variable_pool.get(["sys", SystemVariableKey.CONVERSATION_ID])
 
+        from core.tools.workflow_as_tool.tool import WorkflowTool
+
+        if isinstance(tool_runtime, WorkflowTool):
+            workflow_run_id_var = self.graph_runtime_state.variable_pool.get(["sys", SystemVariableKey.WORKFLOW_RUN_ID])
+            tool_runtime.parent_trace_context = {
+                "trace_id": str(workflow_run_id_var.text) if workflow_run_id_var else "",
+                "parent_node_execution_id": self.execution_id,
+                "parent_workflow_run_id": str(workflow_run_id_var.text) if workflow_run_id_var else "",
+                "parent_app_id": self.app_id,
+            }
+
         try:
             message_stream = ToolEngine.generic_invoke(
                 tool=tool_runtime,
