@@ -5,7 +5,6 @@ import logging
 from collections.abc import Generator, Mapping, Sequence
 from typing import Any, cast
 
-from flask import has_request_context
 from sqlalchemy import select
 
 from core.db.session_factory import session_factory
@@ -51,6 +50,7 @@ class WorkflowTool(Tool):
         self.workflow_call_depth = workflow_call_depth
         self.label = label
         self._latest_usage = LLMUsage.empty_usage()
+        self.parent_trace_context: dict[str, str] | None = None
 
         super().__init__(entity=entity, runtime=runtime)
 
@@ -91,11 +91,15 @@ class WorkflowTool(Tool):
 
         self._latest_usage = LLMUsage.empty_usage()
 
+        args: dict[str, Any] = {"inputs": tool_parameters, "files": files}
+        if self.parent_trace_context:
+            args["_parent_trace_context"] = self.parent_trace_context
+
         result = generator.generate(
             app_model=app,
             workflow=workflow,
             user=user,
-            args={"inputs": tool_parameters, "files": files},
+            args=args,
             invoke_from=self.runtime.invoke_from,
             streaming=False,
             call_depth=self.workflow_call_depth + 1,
