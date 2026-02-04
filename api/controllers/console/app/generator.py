@@ -79,7 +79,7 @@ class RuleGenerateApi(Resource):
     @account_initialization_required
     def post(self):
         args = RuleGeneratePayload.model_validate(console_ns.payload)
-        _, current_tenant_id = current_account_with_tenant()
+        account, current_tenant_id = current_account_with_tenant()
 
         try:
             rules = LLMGenerator.generate_rule_config(
@@ -87,6 +87,8 @@ class RuleGenerateApi(Resource):
                 instruction=args.instruction,
                 model_config=args.model_config_data,
                 no_variable=args.no_variable,
+                user_id=account.id,
+                app_id=None,
             )
         except ProviderTokenNotInitError as ex:
             raise ProviderNotInitializeError(ex.description)
@@ -113,7 +115,7 @@ class RuleCodeGenerateApi(Resource):
     @account_initialization_required
     def post(self):
         args = RuleCodeGeneratePayload.model_validate(console_ns.payload)
-        _, current_tenant_id = current_account_with_tenant()
+        account, current_tenant_id = current_account_with_tenant()
 
         try:
             code_result = LLMGenerator.generate_code(
@@ -121,6 +123,8 @@ class RuleCodeGenerateApi(Resource):
                 instruction=args.instruction,
                 model_config=args.model_config_data,
                 code_language=args.code_language,
+                user_id=account.id,
+                app_id=None,
             )
         except ProviderTokenNotInitError as ex:
             raise ProviderNotInitializeError(ex.description)
@@ -147,13 +151,15 @@ class RuleStructuredOutputGenerateApi(Resource):
     @account_initialization_required
     def post(self):
         args = RuleStructuredOutputPayload.model_validate(console_ns.payload)
-        _, current_tenant_id = current_account_with_tenant()
+        account, current_tenant_id = current_account_with_tenant()
 
         try:
             structured_output = LLMGenerator.generate_structured_output(
                 tenant_id=current_tenant_id,
                 instruction=args.instruction,
                 model_config=args.model_config_data,
+                user_id=account.id,
+                app_id=None,
             )
         except ProviderTokenNotInitError as ex:
             raise ProviderNotInitializeError(ex.description)
@@ -180,14 +186,13 @@ class InstructionGenerateApi(Resource):
     @account_initialization_required
     def post(self):
         args = InstructionGeneratePayload.model_validate(console_ns.payload)
-        _, current_tenant_id = current_account_with_tenant()
+        account, current_tenant_id = current_account_with_tenant()
         providers: list[type[CodeNodeProvider]] = [Python3CodeProvider, JavascriptCodeProvider]
         code_provider: type[CodeNodeProvider] | None = next(
             (p for p in providers if p.is_accept_language(args.language)), None
         )
         code_template = code_provider.get_default_code() if code_provider else ""
         try:
-            # Generate from nothing for a workflow node
             if (args.current in (code_template, "")) and args.node_id != "":
                 app = db.session.query(App).where(App.id == args.flow_id).first()
                 if not app:
@@ -207,6 +212,8 @@ class InstructionGenerateApi(Resource):
                             instruction=args.instruction,
                             model_config=args.model_config_data,
                             no_variable=True,
+                            user_id=account.id,
+                            app_id=args.flow_id,
                         )
                     case "agent":
                         return LLMGenerator.generate_rule_config(
@@ -214,6 +221,8 @@ class InstructionGenerateApi(Resource):
                             instruction=args.instruction,
                             model_config=args.model_config_data,
                             no_variable=True,
+                            user_id=account.id,
+                            app_id=args.flow_id,
                         )
                     case "code":
                         return LLMGenerator.generate_code(
@@ -221,10 +230,12 @@ class InstructionGenerateApi(Resource):
                             instruction=args.instruction,
                             model_config=args.model_config_data,
                             code_language=args.language,
+                            user_id=account.id,
+                            app_id=args.flow_id,
                         )
                     case _:
                         return {"error": f"invalid node type: {node_type}"}
-            if args.node_id == "" and args.current != "":  # For legacy app without a workflow
+            if args.node_id == "" and args.current != "":
                 return LLMGenerator.instruction_modify_legacy(
                     tenant_id=current_tenant_id,
                     flow_id=args.flow_id,
@@ -232,8 +243,10 @@ class InstructionGenerateApi(Resource):
                     instruction=args.instruction,
                     model_config=args.model_config_data,
                     ideal_output=args.ideal_output,
+                    user_id=account.id,
+                    app_id=args.flow_id,
                 )
-            if args.node_id != "" and args.current != "":  # For workflow node
+            if args.node_id != "" and args.current != "":
                 return LLMGenerator.instruction_modify_workflow(
                     tenant_id=current_tenant_id,
                     flow_id=args.flow_id,
@@ -243,6 +256,8 @@ class InstructionGenerateApi(Resource):
                     model_config=args.model_config_data,
                     ideal_output=args.ideal_output,
                     workflow_service=WorkflowService(),
+                    user_id=account.id,
+                    app_id=args.flow_id,
                 )
             return {"error": "incompatible parameters"}, 400
         except ProviderTokenNotInitError as ex:
